@@ -2,13 +2,15 @@
 Profile endpoints for user information and rate limits
 """
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from beanie.operators import And, GTE
 
-from app.core.database import get_db
 from app.api.dependencies import get_current_user
 from app.models.user import User
+from app.models.request import Request
 from app.services.rate_limit_service import get_rate_limit_service
 from app.core.config import settings
+from app.utils.datetime import now_ist
+from datetime import timedelta
 from pydantic import BaseModel
 
 
@@ -38,38 +40,29 @@ class ProfileResponse(BaseModel):
 @router.get("/me", response_model=ProfileResponse)
 async def get_profile(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
 ):
-    """
-    Get current user profile with rate limit information
-    """
-    from app.models.request import Request
-    from app.utils.datetime import now_ist
-    from datetime import timedelta
-    from sqlalchemy import func
-    
-    # Get rate limit status from Redis
+    """Get current user profile with rate limit information"""
     rate_limit_service = get_rate_limit_service()
     rate_status = rate_limit_service.check_rate_limit(current_user.id)
     
-    # Calculate actual request counts from database
     current_time = now_ist()
     one_hour_ago = current_time - timedelta(hours=1)
     one_day_ago = current_time - timedelta(days=1)
     
-    # Count requests in the last hour
-    hourly_count = db.query(func.count(Request.id)).filter(
-        Request.requesterId == current_user.id,
-        Request.createdAt >= one_hour_ago
-    ).scalar() or 0
+    hourly_count = await Request.find(
+        And(
+            Request.requesterId == current_user.id,
+            GTE(Request.createdAt, one_hour_ago)
+        )
+    ).count()
     
-    # Count requests in the last 24 hours
-    daily_count = db.query(func.count(Request.id)).filter(
-        Request.requesterId == current_user.id,
-        Request.createdAt >= one_day_ago
-    ).scalar() or 0
+    daily_count = await Request.find(
+        And(
+            Request.requesterId == current_user.id,
+            GTE(Request.createdAt, one_day_ago)
+        )
+    ).count()
     
-    # Calculate remaining requests
     hourly_remaining = max(0, settings.RATE_LIMIT_HOURLY - hourly_count)
     daily_remaining = max(0, settings.RATE_LIMIT_DAILY - daily_count)
     
