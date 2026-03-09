@@ -2,18 +2,15 @@
 Request model
 Validates: Requirements 22.1, 22.2, 22.3, 24.2, 24.3, 24.4, 24.5, 24.6
 """
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Index, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from beanie import Document, Indexed
+from pydantic import Field, field_validator
 from datetime import datetime
-import uuid
+from typing import Optional
+from uuid import UUID, uuid4
 import enum
 
-from app.core.database import Base
-from app.utils.datetime import now_ist
 
-
-class RequestStatus(enum.Enum):
+class RequestStatus(str, enum.Enum):
     """Request status enumeration"""
     PENDING = "PENDING"
     RESPONDED = "RESPONDED"
@@ -22,14 +19,14 @@ class RequestStatus(enum.Enum):
     CANCELLED = "CANCELLED"
 
 
-class ResponseType(enum.Enum):
+class ResponseType(str, enum.Enum):
     """Response type enumeration"""
     MESSAGE = "MESSAGE"
     ON_MY_WAY = "ON_MY_WAY"
     CANNOT_MOVE = "CANNOT_MOVE"
 
 
-class Request(Base):
+class Request(Document):
     """
     Request model representing call requests between users
     
@@ -43,39 +40,47 @@ class Request(Base):
     - Requirement 24.5: Index on createdAt for expiration job queries
     - Requirement 24.6: Composite index on (requesterId, createdAt) for rate limiting
     """
-    __tablename__ = "requests"
     
     # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id: UUID = Field(default_factory=uuid4)
     
     # Foreign keys
-    requesterId = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    targetUserId = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    requesterId: Indexed(UUID)
+    targetUserId: Indexed(UUID)
     
     # Vehicle information
-    targetVehicle = Column(String(20), nullable=False)
+    targetVehicle: str
     
     # Status tracking
-    status = Column(Enum(RequestStatus), default=RequestStatus.PENDING, nullable=False, index=True)
+    status: Indexed(RequestStatus) = RequestStatus.PENDING
     
     # Timestamps
-    createdAt = Column(DateTime, default=now_ist, nullable=False, index=True)
-    respondedAt = Column(DateTime, nullable=True)
-    expiresAt = Column(DateTime, nullable=False)
+    createdAt: Indexed(datetime)
+    respondedAt: Optional[datetime] = None
+    expiresAt: datetime
     
     # Response details
-    response = Column(Enum(ResponseType), nullable=True)
-    responseMessage = Column(String(500), nullable=True)
+    response: Optional[ResponseType] = None
+    responseMessage: Optional[str] = None
     
-    # Relationships
-    requester = relationship("User", foreign_keys=[requesterId], back_populates="sent_requests")
-    target_user = relationship("User", foreign_keys=[targetUserId], back_populates="received_requests")
+    @field_validator('targetUserId')
+    @classmethod
+    def validate_different_users(cls, v, info):
+        """Validate that requester and target are different users"""
+        if 'requesterId' in info.data and v == info.data['requesterId']:
+            raise ValueError('requesterId and targetUserId must be different')
+        return v
     
-    # Constraints
-    __table_args__ = (
-        CheckConstraint('"requesterId" != "targetUserId"', name='check_different_users'),
-        Index('idx_requester_created', 'requesterId', 'createdAt'),  # Composite index for rate limiting
-    )
+    class Settings:
+        name = "requests"
+        indexes = [
+            "id",
+            "requesterId",
+            "targetUserId",
+            "status",
+            "createdAt",
+            [("requesterId", 1), ("createdAt", -1)],  # Composite index for rate limiting
+        ]
     
     def __repr__(self):
         return f"<Request(id={self.id}, status={self.status}, requesterId={self.requesterId}, targetUserId={self.targetUserId})>"

@@ -1,17 +1,15 @@
 """
 Report model for abuse reporting
 """
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Index
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from beanie import Document, Indexed
+from pydantic import Field
 from datetime import datetime
-import uuid
+from typing import Optional
+from uuid import UUID, uuid4
 import enum
 
-from app.core.database import Base
 
-
-class ReportReason(enum.Enum):
+class ReportReason(str, enum.Enum):
     """Report reason enumeration"""
     SPAM = "SPAM"
     HARASSMENT = "HARASSMENT"
@@ -20,7 +18,7 @@ class ReportReason(enum.Enum):
     OTHER = "OTHER"
 
 
-class ReportStatus(enum.Enum):
+class ReportStatus(str, enum.Enum):
     """Report status enumeration"""
     PENDING = "PENDING"
     UNDER_REVIEW = "UNDER_REVIEW"
@@ -28,7 +26,7 @@ class ReportStatus(enum.Enum):
     DISMISSED = "DISMISSED"
 
 
-class AdminAction(enum.Enum):
+class AdminAction(str, enum.Enum):
     """Admin action enumeration"""
     WARNING = "WARNING"
     TEMPORARY_BAN = "TEMPORARY_BAN"
@@ -36,38 +34,43 @@ class AdminAction(enum.Enum):
     NO_ACTION = "NO_ACTION"
 
 
-class Report(Base):
+class Report(Document):
     """
     Report model for abuse reporting
     Tracks user reports for spam, harassment, and other violations
     """
-    __tablename__ = "reports"
     
     # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id: UUID = Field(default_factory=uuid4)
     
     # Foreign keys
-    reporterId = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    targetUserId = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    reporterId: Indexed(UUID)
+    targetUserId: Indexed(UUID)
     
     # Report details
-    reason = Column(Enum(ReportReason), nullable=False)
-    description = Column(String(1000), nullable=True)
+    reason: ReportReason
+    description: Optional[str] = None
     
     # Status tracking
-    status = Column(Enum(ReportStatus), default=ReportStatus.PENDING, nullable=False, index=True)
+    status: Indexed(ReportStatus) = ReportStatus.PENDING
     
     # Timestamps
-    createdAt = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    reviewedAt = Column(DateTime, nullable=True)
+    createdAt: Indexed(datetime) = Field(default_factory=datetime.utcnow)
+    reviewedAt: Optional[datetime] = None
     
     # Admin review
-    reviewedBy = Column(UUID(as_uuid=True), nullable=True)
-    action = Column(Enum(AdminAction), nullable=True)
+    reviewedBy: Optional[UUID] = None
+    action: Optional[AdminAction] = None
     
-    # Relationships
-    reporter = relationship("User", foreign_keys=[reporterId], back_populates="reports_made")
-    target_user = relationship("User", foreign_keys=[targetUserId], back_populates="reports_received")
+    class Settings:
+        name = "reports"
+        indexes = [
+            "id",
+            "reporterId",
+            "targetUserId",
+            "status",
+            "createdAt",
+        ]
     
     def __repr__(self):
         return f"<Report(id={self.id}, reason={self.reason}, status={self.status}, reporterId={self.reporterId}, targetUserId={self.targetUserId})>"

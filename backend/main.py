@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
-from app.core.database import engine, Base
+from app.core.database import connect_to_mongo, close_mongo_connection
 from app.api.v1 import api_router
 from app.services.request_expiration_service import run_expiration_job
 
@@ -22,6 +22,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     print("Starting Vehicle Obstruction Resolution API...")
+    
+    # Initialize MongoDB
+    try:
+        await connect_to_mongo()
+        print("MongoDB connected successfully")
+    except Exception as e:
+        print(f"Warning: MongoDB initialization failed: {e}")
     
     # Initialize Firebase
     try:
@@ -50,6 +57,13 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print("Shutting down Vehicle Obstruction Resolution API...")
+    
+    # Close MongoDB connection
+    try:
+        await close_mongo_connection()
+        print("MongoDB connection closed")
+    except Exception as e:
+        print(f"Warning: MongoDB shutdown failed: {e}")
     
     # Shutdown scheduler
     try:

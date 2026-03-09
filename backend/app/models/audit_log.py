@@ -2,17 +2,15 @@
 AuditLog model for action tracking
 Validates: Requirements 24.8, 24.9
 """
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Index, JSON
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from beanie import Document, Indexed
+from pydantic import Field
 from datetime import datetime
-import uuid
+from typing import Optional, Dict, Any
+from uuid import UUID, uuid4
 import enum
 
-from app.core.database import Base
 
-
-class ActionType(enum.Enum):
+class ActionType(str, enum.Enum):
     """Action type enumeration for audit logging"""
     USER_REGISTER = "USER_REGISTER"
     USER_LOGIN = "USER_LOGIN"
@@ -26,7 +24,7 @@ class ActionType(enum.Enum):
     REPORT_CREATE = "REPORT_CREATE"
 
 
-class AuditLog(Base):
+class AuditLog(Document):
     """
     AuditLog model for tracking all user actions
     
@@ -34,31 +32,35 @@ class AuditLog(Base):
     - Requirement 24.8: Index on userId for user action queries
     - Requirement 24.9: Index on timestamp for time-based queries
     """
-    __tablename__ = "audit_logs"
     
     # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id: UUID = Field(default_factory=uuid4)
     
     # Foreign key to user
-    userId = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    userId: Indexed(Optional[UUID]) = None
     
     # Action details
-    action = Column(Enum(ActionType), nullable=False)
-    resourceType = Column(String(50), nullable=True)
-    resourceId = Column(String(100), nullable=True)  # Changed from UUID to String to support vehicle numbers
+    action: ActionType
+    resourceType: Optional[str] = None
+    resourceId: Optional[str] = None  # String to support vehicle numbers
     
     # Request metadata
-    ipAddress = Column(String(45), nullable=True)  # IPv6 max length
-    userAgent = Column(String(500), nullable=True)
+    ipAddress: Optional[str] = None
+    userAgent: Optional[str] = None
     
     # Timestamp
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp: Indexed(datetime) = Field(default_factory=datetime.utcnow)
     
-    # Additional metadata as JSON (using extra_data to avoid SQLAlchemy reserved name)
-    extra_data = Column("metadata", JSON, nullable=True)
+    # Additional metadata
+    metadata: Optional[Dict[str, Any]] = None
     
-    # Relationships
-    user = relationship("User", back_populates="audit_logs")
+    class Settings:
+        name = "audit_logs"
+        indexes = [
+            "id",
+            "userId",
+            "timestamp",
+        ]
     
     def __repr__(self):
         return f"<AuditLog(id={self.id}, action={self.action}, userId={self.userId}, timestamp={self.timestamp})>"

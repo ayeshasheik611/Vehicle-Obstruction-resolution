@@ -6,21 +6,20 @@ pending requests that have passed their expiration time.
 
 **Validates Requirements**: 12.1, 12.2, 12.3, 12.4, 12.5
 """
+import asyncio
 from datetime import datetime
-from sqlalchemy.orm import Session
 from typing import List
+from beanie.operators import And, LT
 
-from app.core.database import SessionLocal
 from app.models.request import Request, RequestStatus
-from app.models.audit_log import ActionType
+from app.models.audit_log import ActionType, AuditLog
 from app.utils.datetime import now_ist
-from app.services.audit_service import audit_service
 
 
 class RequestExpirationService:
     """Service for handling request expiration"""
     
-    def expire_pending_requests(self) -> int:
+    async def expire_pending_requests(self) -> int:
         """
         Expire all pending requests that have passed their expiration time.
         
@@ -34,23 +33,18 @@ class RequestExpirationService:
         
         Returns:
             Number of requests that were expired
-            
-        Example:
-            >>> service = RequestExpirationService()
-            >>> expired_count = service.expire_pending_requests()
-            >>> print(f"Expired {expired_count} requests")
         """
-        db: Session = SessionLocal()
         try:
-            # Get current time
             current_time = now_ist()
             
             # Query all PENDING requests with expiresAt < current time
             # Validates Requirement 12.2
-            expired_requests: List[Request] = db.query(Request).filter(
-                Request.status == RequestStatus.PENDING,
-                Request.expiresAt < current_time
-            ).all()
+            expired_requests: List[Request] = await Request.find(
+                And(
+                    Request.status == RequestStatus.PENDING,
+                    LT(Request.expiresAt, current_time)
+                )
+            ).to_list()
             
             expired_count = len(expired_requests)
             
@@ -62,15 +56,15 @@ class RequestExpirationService:
                     # Update status to EXPIRED
                     # Validates Requirement 12.3
                     request.status = RequestStatus.EXPIRED
+                    await request.save()
                     
                     # Create audit log entry with action type REQUEST_EXPIRED
                     # Validates Requirement 12.4
-                    audit_service.log_action(
-                        db=db,
-                        user_id=request.requesterId,
+                    audit_log = AuditLog(
+                        userId=request.requesterId,
                         action=ActionType.REQUEST_EXPIRED,
-                        resource_type="Request",
-                        resource_id=request.id,
+                        resourceType="Request",
+                        resourceId=str(request.id),
                         metadata={
                             "targetUserId": str(request.targetUserId),
                             "targetVehicle": request.targetVehicle,
@@ -78,19 +72,15 @@ class RequestExpirationService:
                             "expiredAt": current_time.isoformat()
                         }
                     )
+                    await audit_log.insert()
                 
-                # Commit all changes
-                db.commit()
                 print(f"Successfully expired {expired_count} requests")
             
             return expired_count
             
         except Exception as e:
-            db.rollback()
             print(f"Error expiring requests: {e}")
             raise
-        finally:
-            db.close()
 
 
 # Service instance
@@ -107,7 +97,8 @@ def run_expiration_job():
     """
     try:
         print(f"[{now_ist().isoformat()}] Running request expiration job...")
-        expired_count = request_expiration_service.expire_pending_requests()
+        # Run async function in sync context
+        expired_count = asyncio.run(request_expiration_service.expire_pending_requests())
         print(f"[{now_ist().isoformat()}] Request expiration job completed. Expired {expired_count} requests.")
     except Exception as e:
         print(f"[{now_ist().isoformat()}] Request expiration job failed: {e}")

@@ -6,17 +6,13 @@ This module provides user registration and login endpoints.
 **Validates Requirements**: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 21.1, 21.2
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 
-from app.core.database import get_db
 from app.schemas.auth import RegisterRequest, RegisterResponse, LoginRequest, LoginResponse
 from app.models.user import User
-from app.models.audit_log import ActionType
+from app.models.audit_log import ActionType, AuditLog
 from app.utils.auth import hash_password, create_access_token, verify_password
 from app.utils.vehicle_validation import validate_vehicle_format, normalize_vehicle_number, get_format_requirements
-from app.services.audit_service import create_audit_log_from_request
 from app.utils.datetime import now_ist
 
 
@@ -27,7 +23,6 @@ router = APIRouter()
 async def register(
     request: Request,
     register_data: RegisterRequest,
-    db: Session = Depends(get_db)
 ):
     """
     Register a new user with vehicle number and password.
@@ -71,7 +66,7 @@ async def register(
         )
     
     # Step 3: Check vehicle uniqueness in database (Requirement 1.2)
-    existing_user = db.query(User).filter(User.vehicleNumber == normalized_vehicle).first()
+    existing_user = await User.find_one(User.vehicleNumber == normalized_vehicle)
     
     if existing_user:
         # Requirement 1.3: Reject registration if vehicle already exists
@@ -95,18 +90,14 @@ async def register(
     )
     
     try:
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-    except IntegrityError:
-        db.rollback()
-        # Handle race condition where vehicle was registered between check and insert
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Vehicle number already registered"
-        )
+        await new_user.insert()
     except Exception as e:
-        db.rollback()
+        # Handle race condition where vehicle was registered between check and insert
+        if "duplicate" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Vehicle number already registered"
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create user account"
@@ -121,18 +112,19 @@ async def register(
     
     # Step 8: Create audit log entry (Requirement 1.9, 21.1)
     try:
-        create_audit_log_from_request(
-            db=db,
-            request=request,
-            user_id=new_user.id,
+        audit_log = AuditLog(
+            userId=new_user.id,
             action=ActionType.USER_REGISTER,
-            resource_type="User",
-            resource_id=new_user.id,
+            resourceType="User",
+            resourceId=str(new_user.id),
+            ipAddress=request.client.host if request.client else None,
+            userAgent=request.headers.get("user-agent"),
             metadata={
                 "vehicleNumber": new_user.vehicleNumber,
                 "success": True
             }
         )
+        await audit_log.insert()
     except Exception as e:
         # Log the error but don't fail the registration
         print(f"Failed to create audit log: {e}")
@@ -150,7 +142,6 @@ async def register(
 async def login(
     request: Request,
     login_data: LoginRequest,
-    db: Session = Depends(get_db)
 ):
     """
     Authenticate a user with vehicle number and password.
@@ -184,7 +175,7 @@ async def login(
     normalized_vehicle = normalize_vehicle_number(login_data.vehicleNumber)
     
     # Step 2: Query user by vehicle number (Requirement 2.1)
-    user = db.query(User).filter(User.vehicleNumber == normalized_vehicle).first()
+    user = await User.find_one(User.vehicleNumber == normalized_vehicle)
     
     # Step 3: Check if user exists and verify password (Requirement 2.2)
     # Return generic error message to avoid revealing whether user exists (Requirement 2.8)
@@ -216,10 +207,8 @@ async def login(
     user.lastLoginAt = now_ist()
     
     try:
-        db.commit()
-        db.refresh(user)
+        await user.save()
     except Exception as e:
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update user login information"
@@ -234,19 +223,20 @@ async def login(
     
     # Step 9: Create audit log entry (Requirement 2.9, 21.2)
     try:
-        create_audit_log_from_request(
-            db=db,
-            request=request,
-            user_id=user.id,
+        audit_log = AuditLog(
+            userId=user.id,
             action=ActionType.USER_LOGIN,
-            resource_type="User",
-            resource_id=user.id,
+            resourceType="User",
+            resourceId=str(user.id),
+            ipAddress=request.client.host if request.client else None,
+            userAgent=request.headers.get("user-agent"),
             metadata={
                 "vehicleNumber": user.vehicleNumber,
                 "fcmTokenUpdated": login_data.fcmToken is not None,
                 "success": True
             }
         )
+        await audit_log.insert()
     except Exception as e:
         # Log the error but don't fail the login
         print(f"Failed to create audit log: {e}")

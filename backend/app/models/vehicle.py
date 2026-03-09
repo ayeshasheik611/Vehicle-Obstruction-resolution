@@ -2,16 +2,14 @@
 Vehicle model
 Validates: Requirements 22.4, 22.5
 """
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from beanie import Document, Indexed, Link
+from pydantic import Field
 from datetime import datetime
-import uuid
+from typing import Optional
+from uuid import UUID, uuid4
 
-from app.core.database import Base
 
-
-class Vehicle(Base):
+class Vehicle(Document):
     """
     Vehicle model representing registered vehicles
     
@@ -19,26 +17,30 @@ class Vehicle(Base):
     - Requirement 22.4: Every vehicle has a valid user ID referencing an existing user
     - Requirement 22.5: Vehicle numbers are unique across all vehicles
     """
-    __tablename__ = "vehicles"
     
     # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id: UUID = Field(default_factory=uuid4)
     
     # Foreign key to user
-    userId = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    userId: Indexed(UUID)
     
     # Vehicle identification
-    vehicleNumber = Column(String(20), unique=True, nullable=False, index=True)
+    vehicleNumber: Indexed(str, unique=True)
     
     # Status
-    isActive = Column(Boolean, default=True, nullable=False)
+    isActive: bool = True
     
     # Timestamps
-    registeredAt = Column(DateTime, default=datetime.utcnow, nullable=False)
-    lastIdentifiedAt = Column(DateTime, nullable=True)
+    registeredAt: datetime = Field(default_factory=datetime.utcnow)
+    lastIdentifiedAt: Optional[datetime] = None
     
-    # Relationships
-    owner = relationship("User", back_populates="vehicles")
+    class Settings:
+        name = "vehicles"
+        indexes = [
+            "id",
+            "userId",
+            "vehicleNumber",
+        ]
     
     def __repr__(self):
         return f"<Vehicle(id={self.id}, vehicleNumber={self.vehicleNumber}, userId={self.userId})>"
