@@ -2,11 +2,12 @@
 AuditLog model for action tracking
 Validates: Requirements 24.8, 24.9
 """
-from beanie import Document, Indexed
-from pydantic import Field
+from beanie import Document
+from pydantic import Field, UUID4
 from datetime import datetime
 from typing import Optional, Dict, Any
-from uuid import UUID, uuid4
+from uuid import uuid4
+from pymongo import IndexModel, ASCENDING
 import enum
 
 
@@ -34,10 +35,10 @@ class AuditLog(Document):
     """
     
     # Primary key
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID4 = Field(default_factory=uuid4)
     
     # Foreign key to user
-    userId: Indexed(Optional[UUID]) = None
+    userId: Optional[UUID4] = None
     
     # Action details
     action: ActionType
@@ -49,7 +50,7 @@ class AuditLog(Document):
     userAgent: Optional[str] = None
     
     # Timestamp
-    timestamp: Indexed(datetime) = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
     
     # Additional metadata
     metadata: Optional[Dict[str, Any]] = None
@@ -57,9 +58,8 @@ class AuditLog(Document):
     class Settings:
         name = "audit_logs"
         indexes = [
-            "id",
-            "userId",
-            "timestamp",
+            IndexModel([("userId", ASCENDING)]),
+            IndexModel([("timestamp", ASCENDING)]),
         ]
     
     def __repr__(self):

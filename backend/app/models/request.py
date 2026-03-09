@@ -2,11 +2,12 @@
 Request model
 Validates: Requirements 22.1, 22.2, 22.3, 24.2, 24.3, 24.4, 24.5, 24.6
 """
-from beanie import Document, Indexed
-from pydantic import Field, field_validator
+from beanie import Document
+from pydantic import Field, field_validator, UUID4
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
+from pymongo import IndexModel, ASCENDING, DESCENDING
 import enum
 
 
@@ -42,20 +43,20 @@ class Request(Document):
     """
     
     # Primary key
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID4 = Field(default_factory=uuid4)
     
     # Foreign keys
-    requesterId: Indexed(UUID)
-    targetUserId: Indexed(UUID)
+    requesterId: UUID4
+    targetUserId: UUID4
     
     # Vehicle information
     targetVehicle: str
     
     # Status tracking
-    status: Indexed(RequestStatus) = RequestStatus.PENDING
+    status: RequestStatus = RequestStatus.PENDING
     
     # Timestamps
-    createdAt: Indexed(datetime)
+    createdAt: datetime
     respondedAt: Optional[datetime] = None
     expiresAt: datetime
     
@@ -74,12 +75,11 @@ class Request(Document):
     class Settings:
         name = "requests"
         indexes = [
-            "id",
-            "requesterId",
-            "targetUserId",
-            "status",
-            "createdAt",
-            [("requesterId", 1), ("createdAt", -1)],  # Composite index for rate limiting
+            IndexModel([("requesterId", ASCENDING)]),
+            IndexModel([("targetUserId", ASCENDING)]),
+            IndexModel([("status", ASCENDING)]),
+            IndexModel([("createdAt", ASCENDING)]),
+            IndexModel([("requesterId", ASCENDING), ("createdAt", DESCENDING)]),  # Composite for rate limiting
         ]
     
     def __repr__(self):

@@ -23,7 +23,7 @@ firebase-admin==6.4.0
 # Image processing and ALPR
 opencv-python==4.9.0.80
 Pillow==10.2.0
-numpy==1.26.3
+numpy>=1.26.3,<2.0.0
 openalpr==1.0.12
 
 # Environment and configuration

@@ -2,11 +2,12 @@
 DeviceToken model
 Validates: Requirements 22.7, 24.7
 """
-from beanie import Document, Indexed
-from pydantic import Field
+from beanie import Document
+from pydantic import Field, UUID4
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
+from pymongo import IndexModel, ASCENDING
 import enum
 
 
@@ -26,13 +27,13 @@ class DeviceToken(Document):
     """
     
     # Primary key
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID4 = Field(default_factory=uuid4)
     
     # Foreign key to user
-    userId: Indexed(UUID)
+    userId: UUID4
     
     # FCM token
-    fcmToken: Indexed(str, unique=True)
+    fcmToken: str
     
     # Platform information
     platform: Platform
@@ -47,9 +48,8 @@ class DeviceToken(Document):
     class Settings:
         name = "device_tokens"
         indexes = [
-            "id",
-            "userId",
-            "fcmToken",
+            IndexModel([("userId", ASCENDING)]),
+            IndexModel([("fcmToken", ASCENDING)], unique=True),
         ]
     
     def __repr__(self):

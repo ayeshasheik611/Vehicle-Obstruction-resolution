@@ -2,11 +2,12 @@
 Vehicle model
 Validates: Requirements 22.4, 22.5
 """
-from beanie import Document, Indexed, Link
-from pydantic import Field
+from beanie import Document
+from pydantic import Field, UUID4
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
+from pymongo import IndexModel, ASCENDING
 
 
 class Vehicle(Document):
@@ -19,13 +20,13 @@ class Vehicle(Document):
     """
     
     # Primary key
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID4 = Field(default_factory=uuid4)
     
     # Foreign key to user
-    userId: Indexed(UUID)
+    userId: UUID4
     
     # Vehicle identification
-    vehicleNumber: Indexed(str, unique=True)
+    vehicleNumber: str
     
     # Status
     isActive: bool = True
@@ -37,9 +38,8 @@ class Vehicle(Document):
     class Settings:
         name = "vehicles"
         indexes = [
-            "id",
-            "userId",
-            "vehicleNumber",
+            IndexModel([("userId", ASCENDING)]),
+            IndexModel([("vehicleNumber", ASCENDING)], unique=True),
         ]
     
     def __repr__(self):

@@ -1,11 +1,12 @@
 """
 Report model for abuse reporting
 """
-from beanie import Document, Indexed
-from pydantic import Field
+from beanie import Document
+from pydantic import Field, UUID4
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
+from pymongo import IndexModel, ASCENDING
 import enum
 
 
@@ -41,35 +42,34 @@ class Report(Document):
     """
     
     # Primary key
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID4 = Field(default_factory=uuid4)
     
     # Foreign keys
-    reporterId: Indexed(UUID)
-    targetUserId: Indexed(UUID)
+    reporterId: UUID4
+    targetUserId: UUID4
     
     # Report details
     reason: ReportReason
     description: Optional[str] = None
     
     # Status tracking
-    status: Indexed(ReportStatus) = ReportStatus.PENDING
+    status: ReportStatus = ReportStatus.PENDING
     
     # Timestamps
-    createdAt: Indexed(datetime) = Field(default_factory=datetime.utcnow)
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
     reviewedAt: Optional[datetime] = None
     
     # Admin review
-    reviewedBy: Optional[UUID] = None
+    reviewedBy: Optional[UUID4] = None
     action: Optional[AdminAction] = None
     
     class Settings:
         name = "reports"
         indexes = [
-            "id",
-            "reporterId",
-            "targetUserId",
-            "status",
-            "createdAt",
+            IndexModel([("reporterId", ASCENDING)]),
+            IndexModel([("targetUserId", ASCENDING)]),
+            IndexModel([("status", ASCENDING)]),
+            IndexModel([("createdAt", ASCENDING)]),
         ]
     
     def __repr__(self):
