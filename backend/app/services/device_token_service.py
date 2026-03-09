@@ -39,28 +39,46 @@ class DeviceTokenService:
         - Requirement 16.2: Support multiple devices per user
         - Requirement 16.3: Record platform type
         """
-        existing_token = await DeviceToken.find_one(DeviceToken.fcmToken == fcm_token)
-        
-        if existing_token:
-            existing_token.userId = user_id
-            existing_token.platform = platform
-            existing_token.isActive = True
-            existing_token.lastUsedAt = now_ist()
-            await existing_token.save()
-            logger.info(f"Updated device token for user {user_id}")
-            return existing_token
-        
-        device_token = DeviceToken(
-            userId=user_id,
-            fcmToken=fcm_token,
-            platform=platform,
-            isActive=True,
-            createdAt=now_ist()
-        )
-        
-        await device_token.insert()
-        logger.info(f"Registered new device token for user {user_id}")
-        return device_token
+        try:
+            # Try to find existing token
+            existing_token = await DeviceToken.find_one(DeviceToken.fcmToken == fcm_token)
+            
+            if existing_token:
+                existing_token.userId = user_id
+                existing_token.platform = platform
+                existing_token.isActive = True
+                existing_token.lastUsedAt = now_ist()
+                await existing_token.save()
+                logger.info(f"Updated device token for user {user_id}")
+                return existing_token
+            
+            # Create new token
+            device_token = DeviceToken(
+                userId=user_id,
+                fcmToken=fcm_token,
+                platform=platform,
+                isActive=True,
+                createdAt=now_ist()
+            )
+            
+            await device_token.insert()
+            logger.info(f"Registered new device token for user {user_id}")
+            return device_token
+            
+        except Exception as e:
+            # Handle duplicate key error - token was inserted by another request
+            if "duplicate key error" in str(e) or "E11000" in str(e):
+                logger.info(f"Token already exists, fetching and updating for user {user_id}")
+                existing_token = await DeviceToken.find_one(DeviceToken.fcmToken == fcm_token)
+                if existing_token:
+                    existing_token.userId = user_id
+                    existing_token.platform = platform
+                    existing_token.isActive = True
+                    existing_token.lastUsedAt = now_ist()
+                    await existing_token.save()
+                    return existing_token
+            # Re-raise if it's a different error
+            raise
     
     @staticmethod
     async def get_active_tokens(user_id: UUID) -> List[DeviceToken]:
